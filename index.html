@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>DWT Watermarking Demo</title>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body class="min-h-screen flex flex-col items-center gap-4 p-4 text-sm">
+  <!--‑‑‑ Tombol & input –‑‑>
+  <div class="flex flex-wrap gap-2">
+    <input id="imgInput" type="file" accept="image/*" hidden />
+    <button id="btnAdd"     class="btn">Add Image</button>
+
+    <input id="wmImgInput"  type="file" accept="image/*" hidden />
+    <button id="btnSelWM"   class="btn">Select Watermark (Image/Txt)</button>
+    <input id="wmText" type="text" placeholder="Watermark Text" class="border px-1"/>
+
+    <button id="btnEmbed"   class="btn">Embedding</button>
+    <button id="btnDownload" class="btn">Download Embedded</button>
+    <button id="btnRetrieve" class="btn">Retrieval</button>
+  </div>
+
+  <!--‑‑‑ 3 frame kanvas –‑‑>
+  <div class="grid md:grid-cols-3 gap-4 w-full max-w-5xl">
+    <canvas id="origCan"     class="frame"></canvas>
+    <canvas id="wmCan"       class="frame"></canvas>
+    <canvas id="retrCan"     class="frame"></canvas>
+  </div>
+
+  <script src="dwt.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
