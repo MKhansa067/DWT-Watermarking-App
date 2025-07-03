@@ -1,74 +1,114 @@
-/*  Single‑level 2D Haar DWT & inverse  – cukup untuk demo  */
-export function haar2D(mat, h, w) {
-  // h, w genap
-  const tmp = new Float32Array(h*w);
+(function(global){
+  "use strict";
 
-  // baris
-  for (let y=0; y<h; y++){
-    for (let x=0; x<w; x+=2){
-      const a = mat[y*w + x], b = mat[y*w + x +1];
-      tmp[y*w/2 + x/2]         = (a + b) / 2;          // LL+LH (sementara)
-      tmp[y*w/2 + x/2 + w*h/4] = (a - b) / 2;          // HL+HH (sementara)
+  // 1‑D forward Haar (even length)
+  function haar1D(data){
+    const n = data.length;
+    const half = n >> 1;
+    const avg  = new Float32Array(half);
+    const diff = new Float32Array(half);
+    for(let i=0;i<half;i++){
+      const a = data[i*2], b = data[i*2+1];
+      avg[i]  = (a+b)/2;
+      diff[i] = (a-b)/2;
     }
+    return {avg, diff};
   }
-  // kolom
-  const res = new Float32Array(h*w);
-  for (let x=0; x<w; x++){
-    for (let y=0; y<h; y+=2){
-      const a = tmp[y*w + x], b = tmp[(y+1)*w + x];
-      const i = (y/2)*w + x;
-      res[i]                = (a + b) / 2;             // LL
-      res[i + (h*w)/4]      = (a - b) / 2;             // HL
-      res[i + (h*w)/2]      = tmp[i + w*h/4];          // LH (dari baris)
-      res[i + (3*h*w)/4]    = tmp[i + w*h/4 + (h*w)/4];// HH
+  // 1‑D inverse Haar
+  function ihaar1D(avg,diff){
+    const n = avg.length*2;
+    const out = new Float32Array(n);
+    for(let i=0;i<avg.length;i++){
+      const a = avg[i], d = diff[i];
+      out[i*2]   = a + d;
+      out[i*2+1] = a - d;
     }
+    return out;
   }
-  return res;
-}
 
-export function inverseHaar2D(coeff, h, w) {
-  const tmp = new Float32Array(h*w);
+  // 2‑D forward Haar single level
+  function haar2D(mat,h,w){
+    const halfH=h>>1, halfW=w>>1;
+    const tmpA = new Float32Array(h*halfW); // row averages
+    const tmpD = new Float32Array(h*halfW); // row diffs
 
-  // kolom inverse
-  for (let x=0; x<w; x++){
-    for (let y=0; y<h/2; y++){
-      const ll = coeff[y*w + x];
-      const hl = coeff[y*w + x + (h*w)/4];
-      tmp[2*y  *w + x] = ll + hl;
-      tmp[(2*y+1)*w + x] = ll - hl;
+    // row transform
+    for(let y=0;y<h;y++){
+      const base=y*w;
+      for(let x=0;x<halfW;x++){
+        const a=mat[base+(x<<1)], b=mat[base+(x<<1)+1];
+        tmpA[y*halfW+x]=(a+b)/2;
+        tmpD[y*halfW+x]=(a-b)/2;
+      }
     }
-  }
-  // baris inverse
-  const res = new Float32Array(h*w);
-  for (let y=0; y<h; y++){
-    for (let x=0; x<w/2; x++){
-      const a = tmp[y*w + x];
-      const b = tmp[y*w + x + w/2];
-      res[y*w + 2*x]   = a + b;
-      res[y*w + 2*x+1] = a - b;
+    // column transform
+    const LL=new Float32Array(halfH*halfW), LH=new Float32Array(halfH*halfW),
+          HL=new Float32Array(halfH*halfW), HH=new Float32Array(halfH*halfW);
+    for(let y=0;y<halfH;y++){
+      for(let x=0;x<halfW;x++){
+        const a1=tmpA[(y<<1)*halfW+x], a2=tmpA[((y<<1)+1)*halfW+x];
+        const d1=tmpD[(y<<1)*halfW+x], d2=tmpD[((y<<1)+1)*halfW+x];
+        const idx=y*halfW+x;
+        LL[idx]=(a1+a2)/2;
+        LH[idx]=(a1-a2)/2;
+        HL[idx]=(d1+d2)/2;
+        HH[idx]=(d1-d2)/2;
+      }
     }
+    return {LL,LH,HL,HH};
   }
-  return res;
-}
 
-/*  Embed watermark (wmData 0/1) ke LH band  */
-export function embedWatermark(imgData, wmData, h, w, alpha=10){
-  const coeff = haar2D(imgData, h, w);
-  const offset = (h*w)/2; // LH start
-  for(let i=0; i<wmData.length; i++){
-    coeff[offset + i] += alpha * (wmData[i]?1:-1);
-  }
-  return inverseHaar2D(coeff, h, w);
-}
+  // 2‑D inverse Haar single level
+  function ihaar2D(coeff,h,w){
+    const halfH=h>>1, halfW=w>>1;
+    const tmpA = new Float32Array(h*halfW);
+    const tmpD = new Float32Array(h*halfW);
 
-/* Extract watermark  */
-export function extractWatermark(origData, embData, h, w, alpha=10){
-  const cOrig = haar2D(origData, h, w);
-  const cEmb  = haar2D(embData,  h, w);
-  const offset = (h*w)/2;
-  const wm = [];
-  for(let i=0; i<cOrig.length/4 && i<1024; i++){
-    wm.push( (cEmb[offset+i] - cOrig[offset+i]) > 0 ? 1 : 0 );
+    for(let y=0;y<halfH;y++){
+      for(let x=0;x<halfW;x++){
+        const i=y*halfW+x;
+        const ll=coeff.LL[i], lh=coeff.LH[i], hl=coeff.HL[i], hh=coeff.HH[i];
+        tmpA[(y<<1)*halfW+x]     = ll+lh;
+        tmpA[((y<<1)+1)*halfW+x] = ll-lh;
+        tmpD[(y<<1)*halfW+x]     = hl+hh;
+        tmpD[((y<<1)+1)*halfW+x] = hl-hh;
+      }
+    }
+    const out=new Float32Array(h*w);
+    for(let y=0;y<h;y++){
+      for(let x=0;x<halfW;x++){
+        const a=tmpA[y*halfW+x], d=tmpD[y*halfW+x];
+        out[y*w+(x<<1)]   = a+d;
+        out[y*w+(x<<1)+1] = a-d;
+      }
+    }
+    return out;
   }
-  return wm;
-}
+
+  // multi‑level decomposition (returns object mimicking pywt.wavedec2 order)
+  function dwt2D(src,h,w,level=1){
+    let LL=src; let currH=h, currW=w;
+    const details=[]; // will hold arrays [LH,HL,HH] per level
+    for(let l=0;l<level;l++){
+      const coeff=haar2D(LL,currH,currW);
+      details.push([coeff.LH,coeff.HL,coeff.HH]);
+      LL=coeff.LL; currH>>=1; currW>>=1;
+    }
+    return {LL,details};
+  }
+
+  // multi‑level reconstruction
+  function idwt2D(coeffs,h,w,level=1){
+    let LL=coeffs.LL; let currH=h>>level, currW=w>>level;
+    for(let l=level-1;l>=0;l--){
+      const [LH,HL,HH]=coeffs.details[l];
+      const full={LL,LH,HL,HH};
+      LL=ihaar2D(full,currH<<1,currW<<1);
+      currH<<=1; currW<<=1;
+    }
+    return LL; // reconstructed image size h*w
+  }
+
+  // expose
+  global.DWT={dwt2D,idwt2D,haar2D:haar2D,ihaar2D:ihaar2D};
+})(window);
