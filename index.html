@@ -1,292 +1,53 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- ============================================================ -->
-  <!--  DWT Watermarking Demo – Single‑Page, Client‑side, No Build  -->
-  <!--  Fitur:                                                     -->
-  <!--    • Add/Load Image                                         -->
-  <!--    • Pilih Watermark:  Image 64×64 atau Text (bebas)        -->
-  <!--    • Embed Watermark ke LH band Haar‑DWT (1‑level)          -->
-  <!--    • Download hasil embed (PNG warna)                       -->
-  <!--    • Retrieval (blind) – tampilkan watermark sebagai pixel  -->
-  <!--  ---------------------------------------------------------- -->
-  <!--  Catatan:                                                   -->
-  <!--    • Seluruh logika murni JS di browser, ukuran < 100 KB.   -->
-  <!--    • Tidak butuh server/API, siap deploy statik (Vercel).   -->
-  <!-- ============================================================ -->
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DWT Watermarking Demo</title>
-
-  <!-- Tailwind CSS via CDN untuk styling cepat tanpa build       -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Style kecil tambahan                                        -->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DWT Watermark Web</title>
   <style>
-    /* Smooth shadow dan border radius */
-    canvas { box-shadow: 0 2px 6px rgba(0,0,0,.15); border-radius: 6px; background:#fafafa; }
-    button:disabled { opacity: .5; cursor: default; }
+    body { font-family: sans-serif; margin: 20px; }
+    canvas { border: 1px solid #ccc; margin: 10px; }
+    #container { display: flex; flex-wrap: wrap; justify-content: center; }
+    .panel { margin: 10px; text-align: center; }
+    .panel label { display: block; margin: 5px 0; }
+    input[type="file"] { margin-top: 5px; }
+    textarea { width: 200px; height: 50px; }
+    button { margin: 5px; }
   </style>
 </head>
-<body class="min-h-screen bg-gray-50 flex flex-col items-center gap-6 p-6 text-sm">
-  <header class="text-center space-y-1">
-    <h1 class="text-3xl font-semibold tracking-wide">DWT Watermarking Demo</h1>
-    <p class="max-w-xl text-gray-600">Contoh aplikasi watermarking (embed & retrieval) berbasis Haar DWT 1‑level di JavaScript, siap deploy statik.</p>
-  </header>
+<body>
+  <h1>DWT Watermarking Web App</h1>
+  <div class="panel">
+    <label>Cover Image</label>
+    <input type="file" id="coverInput" accept="image/*">
+    <canvas id="coverCanvas" width="256" height="256"></canvas>
+  </div>
 
-  <!-- ===================== CONTROL PANEL ====================== -->
-  <section id="controls" class="flex flex-wrap justify-center gap-3">
-    <!-- Hidden file inputs -->
-    <input id="imgInput"   type="file" accept="image/*" class="hidden" />
-    <input id="wmImgInput" type="file" accept="image/*" class="hidden" />
+  <div class="panel">
+    <label>Watermark (Text or Image)</label>
+    <textarea id="watermarkText" placeholder="Enter watermark text here..."></textarea>
+    <input type="file" id="watermarkImageInput" accept="image/*">
+    <canvas id="watermarkCanvas" width="128" height="128"></canvas>
+  </div>
 
-    <!-- Visible buttons -->
-    <button id="btnAdd"      class="px-4 py-2 rounded bg-blue-600  text-white hover:bg-blue-700">Add Image</button>
-    <button id="btnSelWM"    class="px-4 py-2 rounded bg-blue-600  text-white hover:bg-blue-700">Select Watermark Image</button>
-    <input  id="wmText"     type="text" placeholder="Watermark Text (optional)" class="px-2 py-2 border rounded w-52" />
-    <button id="btnEmbed"    class="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700" disabled>Embedding</button>
-    <button id="btnDownload" class="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700" disabled>Download</button>
-    <button id="btnRetrieve" class="px-4 py-2 rounded bg-purple-600 text-white hover:bg-purple-700" disabled>Retrieval</button>
-  </section>
+  <div class="panel">
+    <label>Watermarked Image</label>
+    <canvas id="watermarkedCanvas" width="256" height="256"></canvas><br>
+    <button id="downloadBtn">Download</button>
+  </div>
 
-  <!-- ===================== DISPLAY FRAMES ===================== -->
-  <section class="grid md:grid-cols-2 gap-8 w-full max-w-5xl mt-6">
-    <!-- Frame 1: Original / Embedded -->
-    <div class="flex flex-col items-center gap-2 w-full">
-      <p class="font-medium">Original / Embedded Image</p>
-      <canvas id="origCan" width="256" height="256"></canvas>
-    </div>
-    <!-- Frame 2: Watermark preview / Retrieval result -->
-    <div class="flex flex-col items-center gap-2 w-full">
-      <p class="font-medium">Watermark / Retrieval Result</p>
-      <canvas id="wmCan" width="128" height="128"></canvas>
-    </div>
-  </section>
+  <div class="panel">
+    <label>Recovered Watermark</label>
+    <canvas id="retrievedCanvas" width="128" height="128"></canvas>
+  </div>
 
-  <!-- ======================== SCRIPT ========================== -->
-  <script>
-  /* -----------------------------------------------------------
-     Variabel global sederhana                                   
-  ----------------------------------------------------------- */
-  let imgW = 0, imgH = 0;              // dimensi even aktiv
-  let origGray = null;                 // Float32Array grayscale sumber
-  let origRGB  = null;                 // Uint8ClampedArray RGBA sumber (backup warna)
-  let wmBits   = null;                 // Uint8Array watermark
-  let embeddedGray = null;             // Hasil embed (grayscale)
+  <div class="panel">
+    <button id="embedBtn">Embed</button>
+    <button id="retrieveBtn">Retrieval</button>
+    <button id="selectWatermarkedBtn">Select Watermarked Image</button>
+  </div>
 
-  const origCan = document.getElementById('origCan');
-  const wmCan   = document.getElementById('wmCan');
-  const ctxO    = origCan.getContext('2d');
-  const ctxW    = wmCan.getContext('2d');
-
-  /* -----------------------------------------------------------
-     Util: konversi gambar → grayscale array                    
-  ----------------------------------------------------------- */
-  function imageToGray(img, canvas){
-    const MAX = 512; // batas ukuran sisi terpanjang agar ringan
-    const scale = Math.min(1, MAX / Math.max(img.width, img.height));
-    const w = (Math.floor(img.width  * scale)) & ~1; // pastikan genap
-    const h = (Math.floor(img.height * scale)) & ~1;
-    canvas.width  = w;
-    canvas.height = h;
-    const c = canvas.getContext('2d');
-    c.drawImage(img,0,0,w,h);
-    const rgba = c.getImageData(0,0,w,h).data;
-    const gray = new Float32Array(w*h);
-    for(let i=0;i<gray.length;i++){
-      const r=rgba[i*4], g=rgba[i*4+1], b=rgba[i*4+2];
-      gray[i] = 0.299*r + 0.587*g + 0.114*b; // luminansi
-    }
-    return gray;
-  }
-
-  /* -----------------------------------------------------------
-     Util: render array grayscale ke canvas                     
-  ----------------------------------------------------------- */
-  function putGrayToCanvas(gray,w,h,canvas){
-    canvas.width=w; canvas.height=h;
-    const ctx=canvas.getContext('2d');
-    const imgData=ctx.createImageData(w,h);
-    for(let i=0;i<gray.length;i++){
-      const v=Math.max(0,Math.min(255,gray[i]));
-      imgData.data[i*4]=imgData.data[i*4+1]=imgData.data[i*4+2]=v;
-      imgData.data[i*4+3]=255;
-    }
-    ctx.putImageData(imgData,0,0);
-  }
-
-  /* -----------------------------------------------------------
-     Util: embed grayscale → warna (pakai RGB asli)             
-  ----------------------------------------------------------- */
-  function mergeGrayWithColor(gray,w,h,rgba,canvas){
-    canvas.width=w; canvas.height=h;
-    const ctx=canvas.getContext('2d');
-    const out=ctx.createImageData(w,h);
-    for(let i=0;i<gray.length;i++){
-      out.data[i*4]   = rgba ? rgba[i*4]   : gray[i];
-      out.data[i*4+1] = rgba ? rgba[i*4+1] : gray[i];
-      out.data[i*4+2] = rgba ? rgba[i*4+2] : gray[i];
-      out.data[i*4+3] = 255;
-    }
-    ctx.putImageData(out,0,0);
-  }
-
-  /* -----------------------------------------------------------
-     Util: text → bit array                                      
-  ----------------------------------------------------------- */
-  function textToBits(txt){
-    return Uint8Array.from(txt.split('').flatMap(ch=>ch.charCodeAt(0).toString(2).padStart(8,'0').split('').map(Number)));
-  }
-
-  /* -----------------------------------------------------------
-     Haar 1‑level 2D DWT & inverse                              
-  ----------------------------------------------------------- */
-  function dwt2D(data,h,w){
-    const halfH=h>>1, halfW=w>>1;
-    const tA=new Float32Array(h*halfW), tD=new Float32Array(h*halfW);
-    for(let y=0;y<h;y++)
-      for(let x=0;x<halfW;x++){
-        const a=data[y*w+(x<<1)], b=data[y*w+(x<<1)+1];
-        tA[y*halfW+x]=(a+b)/2;
-        tD[y*halfW+x]=(a-b)/2;
-      }
-    const LL=new Float32Array(halfH*halfW), LH=new Float32Array(halfH*halfW), HL=new Float32Array(halfH*halfW), HH=new Float32Array(halfH*halfW);
-    for(let y=0;y<halfH;y++)
-      for(let x=0;x<halfW;x++){
-        const a1=tA[(y<<1)*halfW+x]  , a2=tA[((y<<1)+1)*halfW+x];
-        const d1=tD[(y<<1)*halfW+x]  , d2=tD[((y<<1)+1)*halfW+x];
-        const i=y*halfW+x;
-        LL[i]=(a1+a2)/2;
-        LH[i]=(a1-a2)/2;
-        HL[i]=(d1+d2)/2;
-        HH[i]=(d1-d2)/2;
-      }
-    return {LL,LH,HL,HH};
-  }
-  function idwt2D(b,h,w){
-    const halfH=h>>1, halfW=w>>1;
-    const tA=new Float32Array(h*halfW), tD=new Float32Array(h*halfW);
-    for(let y=0;y<halfH;y++)
-      for(let x=0;x<halfW;x++){
-        const i=y*halfW+x;
-        const ll=b.LL[i], lh=b.LH[i], hl=b.HL[i], hh=b.HH[i];
-        tA[(y<<1)*halfW+x]     = ll+lh;
-        tA[((y<<1)+1)*halfW+x] = ll-lh;
-        tD[(y<<1)*halfW+x]     = hl+hh;
-        tD[((y<<1)+1)*halfW+x] = hl-hh;
-      }
-    const out=new Float32Array(h*w);
-    for(let y=0;y<h;y++)
-      for(let x=0;x<halfW;x++){
-        const a=tA[y*halfW+x], d=tD[y*halfW+x];
-        out[y*w+(x<<1)]   = a+d;
-        out[y*w+(x<<1)+1] = a-d;
-      }
-    return out;
-  }
-
-  /* -----------------------------------------------------------
-     Embed & blind extract                                       
-  ----------------------------------------------------------- */
-  function embedWatermark(gray,bits,h,w,alpha=8){
-    const b=dwt2D(gray,h,w);
-    const L=b.LH, len=Math.min(bits.length,L.length);
-    for(let i=0;i<len;i++) L[i]+=alpha*(bits[i]?1:-1);
-    return idwt2D(b,h,w);
-  }
-  function extractBlind(gray,h,w){
-    const b=dwt2D(gray,h,w); const L=b.LH;
-    const mean=L.reduce((s,v)=>s+v,0)/L.length;
-    return Uint8Array.from(L,v=>v>mean?1:0);
-  }
-
-  /* -----------------------------------------------------------
-     Helper: render bit array (square) as pixel image            
-  ----------------------------------------------------------- */
-  function bitsToCanvas(bits,canvas){
-    const size=Math.sqrt(bits.length) | 0;
-    if(size*size!==bits.length){ putGrayToCanvas(bits,size,size,canvas); return; }
-    const scale=2; canvas.width=canvas.height=size*scale;
-    const ctx=canvas.getContext('2d');
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    for(let y=0;y<size;y++)
-      for(let x=0;x<size;x++){
-        ctx.fillStyle=bits[y*size+x]?'#000':'#fff';
-        ctx.fillRect(x*scale,y*scale,scale,scale);
-      }
-  }
-
-  /* -----------------------------------------------------------
-     Button events                                               
-  ----------------------------------------------------------- */
-  const btnAdd       = document.getElementById('btnAdd');
-  const btnSelWM     = document.getElementById('btnSelWM');
-  const btnEmbed     = document.getElementById('btnEmbed');
-  const btnDownload  = document.getElementById('btnDownload');
-  const btnRetrieve  = document.getElementById('btnRetrieve');
-  const imgInput     = document.getElementById('imgInput');
-  const wmImgInput   = document.getElementById('wmImgInput');
-  const wmTextInput  = document.getElementById('wmText');
-
-  // Add Image
-  btnAdd.onclick = ()=>imgInput.click();
-  imgInput.onchange = e=>{
-    const f=e.target.files[0]; if(!f) return;
-    const img=new Image();
-    img.onload=()=>{
-      origGray=imageToGray(img,origCan);
-      imgW=origCan.width; imgH=origCan.height;
-      origRGB=ctxO.getImageData(0,0,imgW,imgH).data.slice();
-      putGrayToCanvas(origGray,imgW,imgH,origCan);
-      // Reset state
-      embeddedGray=null; btnEmbed.disabled=false; btnRetrieve.disabled=true; btnDownload.disabled=true;
-      ctxW.clearRect(0,0,wmCan.width,wmCan.height);
-    };
-    img.src=URL.createObjectURL(f);
-  };
-
-  // Select Watermark Image
-  btnSelWM.onclick = ()=>wmImgInput.click();
-  wmImgInput.onchange = e=>{
-    const f=e.target.files[0]; if(!f) return;
-    const img=new Image();
-    img.onload=()=>{
-      const g=imageToGray(img,wmCan); // wmCan dipakai sementara untuk scaling 64x64
-      wmBits=Uint8Array.from(g.map(v=>v>127?1:0));
-      putGrayToCanvas(g,wmCan.width,wmCan.height,wmCan);
-    };
-    img.src=URL.createObjectURL(f);
-  };
-
-  // Embed
-  btnEmbed.onclick = () => {
-    if (!origGray) return alert("Please select an image first");
-    const txt = wmTextInput.value.trim();
-    if (txt && !wmBits) wmBits = textToBits(txt);
-    if (!wmBits) return alert("Please select watermark image or enter text");
-    embeddedGray = embedWatermark(origGray, wmBits, imgH, imgW);
-    mergeGrayWithColor(embeddedGray, imgW, imgH, origRGB, origCan);
-    btnDownload.disabled = false;
-    btnRetrieve.disabled = false;
-  };
-
-  // Download
-  btnDownload.onclick = () => {
-    const a = document.createElement("a");
-    a.download = "embedded.png";
-    a.href = origCan.toDataURL("image/png");
-    a.click();
-  };
-
-  // Retrieval (blind extract)
-  btnRetrieve.onclick = () => {
-    const gray = imageToGray(origCan, origCan);
-    const b = dwt2D(gray, imgH, imgW);
-    const extracted = b.LH;
-    const min = Math.min(...extracted), max = Math.max(...extracted);
-    const norm = extracted.map(v => 255 * (v - min) / (max - min));
-    putGrayToCanvas(norm, imgW >> 1, imgH >> 1, wmCan);
-  };
-  </script>
+  <script src="dwt.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
-
