@@ -235,30 +235,29 @@
 
   // Retrieval
   document.getElementById('btnRetrieve').onclick = () => {
-    if (!embeddedGray) return alert('Embed first!');
+    if (!origGray) return alert('Please add the embedded image first.');
+    embeddedGray = origGray; // Treat loaded image as embedded image for retrieval
     const bits = extractWatermark(origGray, embeddedGray, imgH, imgW, 8);
     // try to detect if original was text or image
     if (wmBits && wmBits.length === bits.length) {
-      // show bits as 64x64 image
       const size = Math.sqrt(bits.length);
-      wmCan.width = wmCan.height = size*2;
-      ctxW.clearRect(0,0,wmCan.width,wmCan.height);
-      for (let y=0; y<size; y++) {
-        for (let x=0; x<size; x++) {
-          ctxW.fillStyle = bits[y*size+x] ? '#000' : '#fff';
-          ctxW.fillRect(x*2, y*2, 2, 2);
+      wmCan.width = wmCan.height = size * 2;
+      ctxW.clearRect(0, 0, wmCan.width, wmCan.height);
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          ctxW.fillStyle = bits[y * size + x] ? '#000' : '#fff';
+          ctxW.fillRect(x * 2, y * 2, 2, 2);
         }
       }
     } else {
-      // Convert bits to text (group of 8)
       let txt = '';
-      for (let i = 0; i<bits.length; i+=8) {
-        const byte = bits.slice(i,i+8).join('');
-        const charCode = parseInt(byte,2);
-        if (!charCode || charCode>127) continue;
+      for (let i = 0; i < bits.length; i += 8) {
+        const byte = bits.slice(i, i + 8).join('');
+        const charCode = parseInt(byte, 2);
+        if (!charCode || charCode > 127) continue;
         txt += String.fromCharCode(charCode);
       }
-      ctxW.clearRect(0,0,wmCan.width,wmCan.height);
+      ctxW.clearRect(0, 0, wmCan.width, wmCan.height);
       ctxW.font = '16px monospace';
       ctxW.fillText(txt || '[no text]', 10, 30);
     }
