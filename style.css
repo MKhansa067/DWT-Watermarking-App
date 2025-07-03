@@ -1,0 +1,4 @@
+/* Cukup ringan, boleh diganti Tailwind CDN untuk styling cepat */
+.btn   { background:#3b82f6;color:#fff;padding:4px 8px;border-radius:4px; }
+.btn:hover { filter:brightness(1.1); }
+.frame { width:100%; aspect-ratio:1/1; background:#eee; border:1px solid #ccc; }
