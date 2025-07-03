@@ -4,76 +4,265 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DWT Watermarking App</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      margin: 0;
-      padding: 20px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-bottom: 20px;
-    }
-    .controls input[type="text"] {
-      padding: 5px;
-    }
-    .frame-container {
-      display: flex;
-      flex-direction: row;
-      gap: 20px;
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-    canvas {
-      background-color: #f0f0f0;
-      border: 1px solid #ccc;
-    }
-    .btn {
-      background: #1d4ed8;
-      color: white;
-      border: none;
-      padding: 6px 12px;
-      cursor: pointer;
-      border-radius: 5px;
-    }
-    .btn:hover {
-      background: #2563eb;
-    }
-  </style>
+  <!-- Tailwind via CDN: ringan, tanpa build -->
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-  <h1>DWT Watermarking</h1>
-  <div class="controls">
-    <button class="btn" onclick="document.getElementById('imgInput').click()">Add Image</button>
-    <input id="imgInput" type="file" accept="image/*" hidden>
+<body class="min-h-screen flex flex-col items-center gap-6 p-6 bg-gray-50 text-sm">
+  <h1 class="text-2xl font-semibold">DWT Watermarking Demo</h1>
 
-    <button class="btn" onclick="document.getElementById('wmImgInput').click()">Select Watermark Image</button>
-    <input id="wmImgInput" type="file" accept="image/*" hidden>
+  <!-- Control panel -->
+  <div id="controls" class="flex flex-wrap gap-3 justify-center">
+    <input id="imgInput" type="file" accept="image/*" class="hidden" />
+    <button id="btnAdd" class="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">Add Image</button>
 
-    <input id="wmText" type="text" placeholder="Watermark Text (optional)">
+    <input id="wmImgInput" type="file" accept="image/*" class="hidden" />
+    <button id="btnSelWM" class="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">Select Watermark Image</button>
 
-    <button class="btn" onclick="embed()">Embedding</button>
-    <button class="btn" onclick="download()">Download Embedded</button>
-    <button class="btn" onclick="retrieval()">Retrieval</button>
+    <input id="wmText" type="text" placeholder="Watermark Text (optional)" class="px-2 py-2 border rounded" />
+
+    <button id="btnEmbed" class="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700">Embedding</button>
+    <button id="btnDownload" class="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">Download Embedded</button>
+    <button id="btnRetrieve" class="px-4 py-2 rounded bg-purple-600 text-white hover:bg-purple-700">Retrieval</button>
   </div>
 
-  <div class="frame-container">
-    <div>
-      <p>Original / Embedded Image</p>
-      <canvas id="origCan" width="256" height="256"></canvas>
+  <!-- Display frames -->
+  <div class="grid md:grid-cols-2 gap-6 w-full max-w-4xl">
+    <div class="flex flex-col items-center gap-2">
+      <p class="font-medium">Original / Embedded Image</p>
+      <canvas id="origCan" width="256" height="256" class="border shadow rounded"></canvas>
     </div>
-    <div>
-      <p>Watermark / Retrieval Result</p>
-      <canvas id="wmCan" width="128" height="128"></canvas>
+    <div class="flex flex-col items-center gap-2">
+      <p class="font-medium">Watermark / Retrieval Result</p>
+      <canvas id="wmCan" width="128" height="128" class="border shadow rounded"></canvas>
     </div>
   </div>
 
-  <script src="dwt.js"></script>
-  <script src="app.js"></script>
+  <!-- ===================  Core JS (DWT + App Logic)  =================== -->
+  <script>
+  // ---------- Haar 1‑level DWT utilities ----------
+  function dwt2D(data, h, w) {
+    const halfH = h >> 1, halfW = w >> 1;
+    const LL = new Float32Array(halfH * halfW);
+    const HL = new Float32Array(halfH * halfW);
+    const LH = new Float32Array(halfH * halfW);
+    const HH = new Float32Array(halfH * halfW);
+    // Row transform: averages & diffs
+    const rowA = new Float32Array(h * halfW);
+    const rowD = new Float32Array(h * halfW);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < halfW; x++) {
+        const a = data[y * w + (x << 1)];
+        const b = data[y * w + (x << 1) + 1];
+        rowA[y * halfW + x] = (a + b) / 2;
+        rowD[y * halfW + x] = (a - b) / 2;
+      }
+    }
+    // Column transform on rowA and rowD
+    for (let y = 0; y < halfH; y++) {
+      for (let x = 0; x < halfW; x++) {
+        const a1 = rowA[(y << 1) * halfW + x];
+        const a2 = rowA[((y << 1) + 1) * halfW + x];
+        const d1 = rowD[(y << 1) * halfW + x];
+        const d2 = rowD[((y << 1) + 1) * halfW + x];
+        const idx = y * halfW + x;
+        LL[idx] = (a1 + a2) / 2;
+        LH[idx] = (a1 - a2) / 2;
+        HL[idx] = (d1 + d2) / 2;
+        HH[idx] = (d1 - d2) / 2;
+      }
+    }
+    return {LL, HL, LH, HH};
+  }
+
+  function idwt2D(bands, h, w) {
+    const halfH = h >> 1, halfW = w >> 1;
+    const rowA = new Float32Array(h * halfW);
+    const rowD = new Float32Array(h * halfW);
+    // Inverse column
+    for (let y = 0; y < halfH; y++) {
+      for (let x = 0; x < halfW; x++) {
+        const idx = y * halfW + x;
+        const ll = bands.LL[idx];
+        const lh = bands.LH[idx];
+        const hl = bands.HL[idx];
+        const hh = bands.HH[idx];
+        rowA[(y << 1) * halfW + x]       = ll + lh;
+        rowA[((y << 1) + 1) * halfW + x] = ll - lh;
+        rowD[(y << 1) * halfW + x]       = hl + hh;
+        rowD[((y << 1) + 1) * halfW + x] = hl - hh;
+      }
+    }
+    // Inverse row
+    const out = new Float32Array(h * w);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < halfW; x++) {
+        const a = rowA[y * halfW + x];
+        const d = rowD[y * halfW + x];
+        out[y * w + (x << 1)]     = a + d;
+        out[y * w + (x << 1) + 1] = a - d;
+      }
+    }
+    return out;
+  }
+
+  function embedWatermark(origData, wmBits, h, w, alpha = 5) {
+    const bands = dwt2D(origData, h, w);
+    const len = Math.min(wmBits.length, bands.LH.length);
+    for (let i = 0; i < len; i++) {
+      bands.LH[i] += alpha * (wmBits[i] ? 1 : -1);
+    }
+    return idwt2D(bands, h, w);
+  }
+
+  function extractWatermark(origData, embData, h, w, alpha = 5) {
+    const origB = dwt2D(origData, h, w);
+    const embB  = dwt2D(embData,  h, w);
+    const bits = new Uint8Array(origB.LH.length);
+    for (let i = 0; i < bits.length; i++) {
+      bits[i] = (embB.LH[i] - origB.LH[i]) > 0 ? 1 : 0;
+    }
+    return bits;
+  }
+
+  // ---------- UI Logic ----------
+  const origCan = document.getElementById('origCan');
+  const wmCan   = document.getElementById('wmCan');
+  const ctxO = origCan.getContext('2d');
+  const ctxW = wmCan.getContext('2d');
+
+  let origGray = null, imgW = 0, imgH = 0;
+  let wmBits = null;     // Uint8Array (binary watermark)
+  let embeddedGray = null;
+
+  // helpers
+  function imageToGray(img, canvas) {
+    const ratio = Math.max(img.width, img.height) / 256;
+    const w = Math.floor(img.width  / ratio);
+    const h = Math.floor(img.height / ratio);
+    canvas.width = w % 2 ? w - 1 : w;   // even dimensions for DWT
+    canvas.height= h % 2 ? h - 1 : h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const gray = new Float32Array(canvas.width * canvas.height);
+    for (let i = 0; i < gray.length; i++) {
+      const r=data[i*4], g=data[i*4+1], b=data[i*4+2];
+      gray[i] = 0.299*r + 0.587*g + 0.114*b;
+    }
+    return gray;
+  }
+
+  function grayToCanvas(gray, w, h, canvas) {
+    const ctx = canvas.getContext('2d');
+    const imgData = ctx.createImageData(w, h);
+    for (let i = 0; i < gray.length; i++) {
+      const val = Math.max(0, Math.min(255, gray[i]));
+      imgData.data[i*4] = imgData.data[i*4+1] = imgData.data[i*4+2] = val;
+      imgData.data[i*4+3] = 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+  }
+
+  function textToBits(txt) {
+    const bits = [];
+    for (const ch of txt) {
+      const bin = ch.charCodeAt(0).toString(2).padStart(8, '0');
+      for (const b of bin) bits.push(+b);
+    }
+    return new Uint8Array(bits);
+  }
+
+  // Add Image
+  document.getElementById('btnAdd').onclick = () => imgInput.click();
+  document.getElementById('imgInput').onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const img = new Image();
+    img.onload = () => {
+      origGray = imageToGray(img, origCan);
+      imgW = origCan.width; imgH = origCan.height;
+      grayToCanvas(origGray, imgW, imgH, origCan);
+      wmBits = null; embeddedGray = null;
+      ctxW.clearRect(0,0,wmCan.width,wmCan.height);
+    };
+    img.src = URL.createObjectURL(file);
+  };
+
+  // Select Watermark Image
+  document.getElementById('btnSelWM').onclick = () => wmImgInput.click();
+  document.getElementById('wmImgInput').onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const img = new Image();
+    img.onload = () => {
+      const temp = document.createElement('canvas');
+      temp.width = temp.height = 64;
+      const ctx = temp.getContext('2d');
+      ctx.drawImage(img, 0, 0, 64, 64);
+      const data = ctx.getImageData(0,0,64,64).data;
+      const bits = new Uint8Array(64*64);
+      for (let i = 0; i < bits.length; i++) {
+        const r=data[i*4],g=data[i*4+1],b=data[i*4+2];
+        bits[i] = (r+g+b)/3 > 128 ? 1 : 0;
+      }
+      wmBits = bits;
+      // draw preview
+      wmCan.width = 128; wmCan.height = 128; ctxW.imageSmoothingEnabled=false;
+      ctxW.putImageData(ctx.getImageData(0,0,64,64),0,0);
+      ctxW.drawImage(temp,0,0,128,128);
+    };
+    img.src = URL.createObjectURL(file);
+  };
+
+  // Embedding
+  document.getElementById('btnEmbed').onclick = () => {
+    if (!origGray) return alert('Please add an image first');
+    if (!wmBits && wmText.value.trim() === '') return alert('Please provide a watermark (image or text).');
+    if (!wmBits) wmBits = textToBits(wmText.value.trim());
+
+    embeddedGray = embedWatermark(origGray, wmBits, imgH, imgW, 8);
+    grayToCanvas(embeddedGray, imgW, imgH, origCan);
+  };
+
+  // Download
+  document.getElementById('btnDownload').onclick = () => {
+    if (!embeddedGray) return alert('Embed first!');
+    const link = document.createElement('a');
+    link.download = 'embedded.png';
+    link.href = origCan.toDataURL('image/png');
+    link.click();
+  };
+
+  // Retrieval
+  document.getElementById('btnRetrieve').onclick = () => {
+    if (!embeddedGray) return alert('Embed first!');
+    const bits = extractWatermark(origGray, embeddedGray, imgH, imgW, 8);
+    // try to detect if original was text or image
+    if (wmBits && wmBits.length === bits.length) {
+      // show bits as 64x64 image
+      const size = Math.sqrt(bits.length);
+      wmCan.width = wmCan.height = size*2;
+      ctxW.clearRect(0,0,wmCan.width,wmCan.height);
+      for (let y=0; y<size; y++) {
+        for (let x=0; x<size; x++) {
+          ctxW.fillStyle = bits[y*size+x] ? '#000' : '#fff';
+          ctxW.fillRect(x*2, y*2, 2, 2);
+        }
+      }
+    } else {
+      // Convert bits to text (group of 8)
+      let txt = '';
+      for (let i = 0; i<bits.length; i+=8) {
+        const byte = bits.slice(i,i+8).join('');
+        const charCode = parseInt(byte,2);
+        if (!charCode || charCode>127) continue;
+        txt += String.fromCharCode(charCode);
+      }
+      ctxW.clearRect(0,0,wmCan.width,wmCan.height);
+      ctxW.font = '16px monospace';
+      ctxW.fillText(txt || '[no text]', 10, 30);
+    }
+  };
+  </script>
 </body>
 </html>
