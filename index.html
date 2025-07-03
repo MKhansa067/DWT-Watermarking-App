@@ -1,31 +1,76 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>DWT Watermarking Demo</title>
-  <link rel="stylesheet" href="style.css"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DWT Watermarking App</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .controls input[type="text"] {
+      padding: 5px;
+    }
+    .frame-container {
+      display: flex;
+      flex-direction: row;
+      gap: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    canvas {
+      background-color: #f0f0f0;
+      border: 1px solid #ccc;
+    }
+    .btn {
+      background: #1d4ed8;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    .btn:hover {
+      background: #2563eb;
+    }
+  </style>
 </head>
-<body class="min-h-screen flex flex-col items-center gap-4 p-4 text-sm">
+<body>
+  <h1>DWT Watermarking</h1>
+  <div class="controls">
+    <button class="btn" onclick="document.getElementById('imgInput').click()">Add Image</button>
+    <input id="imgInput" type="file" accept="image/*" hidden>
 
-  <div class="flex flex-wrap gap-2">
-    <input id="imgInput" type="file" accept="image/*" hidden />
-    <button id="btnAdd"     class="btn">Add Image</button>
+    <button class="btn" onclick="document.getElementById('wmImgInput').click()">Select Watermark Image</button>
+    <input id="wmImgInput" type="file" accept="image/*" hidden>
 
-    <input id="wmImgInput"  type="file" accept="image/*" hidden />
-    <button id="btnSelWM"   class="btn">Select Watermark (Image/Txt)</button>
-    <input id="wmText" type="text" placeholder="Watermark Text" class="border px-1"/>
+    <input id="wmText" type="text" placeholder="Watermark Text (optional)">
 
-    <button id="btnEmbed"   class="btn">Embedding</button>
-    <button id="btnDownload" class="btn">Download Embedded</button>
-    <button id="btnRetrieve" class="btn">Retrieval</button>
+    <button class="btn" onclick="embed()">Embedding</button>
+    <button class="btn" onclick="download()">Download Embedded</button>
+    <button class="btn" onclick="retrieval()">Retrieval</button>
   </div>
 
-
-  <div class="grid md:grid-cols-3 gap-4 w-full max-w-5xl">
-    <canvas id="origCan"     class="frame"></canvas>
-    <canvas id="wmCan"       class="frame"></canvas>
-    <canvas id="retrCan"     class="frame"></canvas>
+  <div class="frame-container">
+    <div>
+      <p>Original / Embedded Image</p>
+      <canvas id="origCan" width="256" height="256"></canvas>
+    </div>
+    <div>
+      <p>Watermark / Retrieval Result</p>
+      <canvas id="wmCan" width="128" height="128"></canvas>
+    </div>
   </div>
 
   <script src="dwt.js"></script>
